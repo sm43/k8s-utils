@@ -413,13 +413,14 @@ parse_args() {
 
 
 find_resource() {
-  LABEL=($(oc get $RESOURCE $NAMESPACE -o jsonpath={.spec.selector.matchLabels} |
-   tr -d '"' | tr -d '{' | tr -d '}' | tr ':' '=' \
-  ))
-}
+  local jsonpath=""
+  if [ $SEARCH == "deployment" ]; then
+    jsonpath=".spec.selector.matchLabels"
+  elif [ $SEARCH == "service" ]; then
+    jsonpath=".spec.selector"
+  fi
 
-find_service() {
-  LABEL=($(oc get $RESOURCE $NAMESPACE -o jsonpath={.spec.selector} |
+  LABEL=($(oc get $RESOURCE $NAMESPACE -o jsonpath={$jsonpath} |
    tr -d '"' | tr -d '{' | tr -d '}' | tr ':' '=' \
   ))
 }
@@ -430,21 +431,13 @@ main() {
   $SHOW_USAGE && usage 0
 
   $ARG_ERR &&  {
-    echo "invalid input"
+    err "invalid input format"
     usage 1
   }
 
-  if [ $SEARCH == "deployment" ]; then
+  if [ $SEARCH != "pod" ]; then
     info "Finding $RESOURCE"
     find_resource || {
-      err "Failed to find $RESOURCE"
-      return 1
-    } 
-  fi
-
-  if [ $SEARCH == "service" ]; then
-    info "Finding $RESOURCE"
-    find_service || {
       err "Failed to find $RESOURCE"
       return 1
     } 
