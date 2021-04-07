@@ -318,6 +318,12 @@ Examples:
   # Capture pods that has label app=nginx deployed to 'web' namespace
   $app -n web -l app=nginx
 
+  # Capture all pods of a deployment
+  $app deployment/core-dns -n openshift-dns
+
+  # Capture all pods of a service
+  $app service/dns -n openshift-dns
+
 EOF_HELP
 
   echo -e "$help"
@@ -329,6 +335,13 @@ declare  SHOW_USAGE=false
 declare  CAPTURE_NODE_PACKETS=true
 
 declare -a POD_ARGS=()
+
+declare SEARCH=""
+declare RESOURCE=""
+declare NAMESPACE=""
+declare ARG_ERR=false
+declare -a LABEL=()
+
 parse_args() {
   # parses all the args and extracts the script related args (-h, --no-nodes)
   # and puts rest of the arguments in POD_ARGS array
@@ -340,19 +353,106 @@ parse_args() {
     case $1 in
     -h|--help)    SHOW_USAGE=true; return ;; # exit the loop
     --no-nodes)   CAPTURE_NODE_PACKETS=false; shift ;;
-    *)   POD_ARGS+=( "$1" ); shift
+    *)
+      if [[ $1 == -l ]] || [[ $1 == --selector ]]; then
+
+        if [ -z "$SEARCH" ]; then
+          SEARCH="pod"
+        else
+          ARG_ERR=true;
+          return
+        fi
+        POD_ARGS+=( "$1" ); shift; POD_ARGS+=( "$1" ); shift;
+
+      elif [[ $1 == -l=* ]] || [[ $1 == --selector=* ]]; then
+        
+        if [ -z "$SEARCH" ]; then
+          SEARCH="pod"
+        else
+          ARG_ERR=true;
+          return
+        fi
+        POD_ARGS+=( "$1" ); shift;
+      
+      elif [[ $1 == -n ]] || [[ $1 == --namespace ]]; then
+        POD_ARGS+=( "$1" ); shift;
+        NAMESPACE="-n=$1"; POD_ARGS+=( "$1" ); shift;
+
+      elif [[ $1 == -n=* ]] || [[ $1 == --namespace=* ]]; then
+        NAMESPACE="$1"; POD_ARGS+=( "$1" ); shift;
+  
+      else
+        if [[ $1 == deployment/* ]]; then 
+          
+          if [ -z "$SEARCH" ]; then
+            SEARCH="deployment"; RESOURCE=$1; shift;
+          else
+            ARG_ERR=true;
+            return
+          fi
+
+        elif [[ $1 == service/* ]]; then
+
+          if [ -z "$SEARCH" ]; then
+            SEARCH="service"; RESOURCE=$1; shift;
+          else
+            ARG_ERR=true;
+            return
+          fi
+
+        else
+          ARG_ERR=true;
+          return
+        fi
+
+      fi
     esac
   done
   return 0
 }
 
 
+find_resource() {
+  LABEL=($(oc get $RESOURCE $NAMESPACE -o jsonpath={.spec.selector.matchLabels} |
+   tr -d '"' | tr -d '{' | tr -d '}' | tr ':' '=' \
+  ))
+}
+
+find_service() {
+  LABEL=($(oc get $RESOURCE $NAMESPACE -o jsonpath={.spec.selector} |
+   tr -d '"' | tr -d '{' | tr -d '}' | tr ':' '=' \
+  ))
+}
 
 main() {
   ## usage
   parse_args "$@" || usage
   $SHOW_USAGE && usage 0
 
+  $ARG_ERR &&  {
+    echo "invalid input"
+    usage 1
+  }
+
+  if [ $SEARCH == "deployment" ]; then
+    info "Finding $RESOURCE"
+    find_resource || {
+      err "Failed to find $RESOURCE"
+      return 1
+    } 
+  fi
+
+  if [ $SEARCH == "service" ]; then
+    info "Finding $RESOURCE"
+    find_service || {
+      err "Failed to find $RESOURCE"
+      return 1
+    } 
+  fi
+
+  if (( ${#LABEL[@]} )); then
+      POD_ARGS+=( "-l ${LABEL[0]}" )
+  fi
 
   info "Finding pods matching \"${POD_ARGS[@]}\""
   find_pods "${POD_ARGS[@]}" || {
