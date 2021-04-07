@@ -342,6 +342,15 @@ declare NAMESPACE=""
 declare ARG_ERR=false
 declare -a LABEL=()
 
+setSearch() {
+  if [ -z "$SEARCH" ]; then
+          SEARCH="$1"
+  else
+    ARG_ERR=true;
+    return
+  fi
+}
+
 parse_args() {
   # parses all the args and extracts the script related args (-h, --no-nodes)
   # and puts rest of the arguments in POD_ARGS array
@@ -355,51 +364,29 @@ parse_args() {
     --no-nodes)   CAPTURE_NODE_PACKETS=false; shift ;;
     *)
       if [[ $1 == -l ]] || [[ $1 == --selector ]]; then
-
-        if [ -z "$SEARCH" ]; then
-          SEARCH="pod"
-        else
-          ARG_ERR=true;
-          return
-        fi
-        POD_ARGS+=( "$1" ); shift; POD_ARGS+=( "$1" ); shift;
+        setSearch "pod"
+        POD_ARGS+=( "$1" ); shift; 
+        POD_ARGS+=( "$1" ); shift;
 
       elif [[ $1 == -l=* ]] || [[ $1 == --selector=* ]]; then
-        
-        if [ -z "$SEARCH" ]; then
-          SEARCH="pod"
-        else
-          ARG_ERR=true;
-          return
-        fi
+        setSearch "pod"
         POD_ARGS+=( "$1" ); shift;
       
       elif [[ $1 == -n ]] || [[ $1 == --namespace ]]; then
         POD_ARGS+=( "$1" ); shift;
-        NAMESPACE="-n=$1"; POD_ARGS+=( "$1" ); shift;
+        NAMESPACE="-n=$1"; 
+        POD_ARGS+=( "$1" ); shift;
 
       elif [[ $1 == -n=* ]] || [[ $1 == --namespace=* ]]; then
         NAMESPACE="$1"; POD_ARGS+=( "$1" ); shift;
   
       else
-        if [[ $1 == deployment/* ]]; then 
-          
-          if [ -z "$SEARCH" ]; then
-            SEARCH="deployment"; RESOURCE=$1; shift;
-          else
-            ARG_ERR=true;
-            return
-          fi
-
+        if [[ $1 == deployment/* ]]; then   
+          setSearch "deployment"
+          RESOURCE=$1; shift;
         elif [[ $1 == service/* ]]; then
-
-          if [ -z "$SEARCH" ]; then
-            SEARCH="service"; RESOURCE=$1; shift;
-          else
-            ARG_ERR=true;
-            return
-          fi
-
+          setSearch "service"
+          RESOURCE=$1; shift;
         else
           ARG_ERR=true;
           return
@@ -442,6 +429,7 @@ main() {
       return 1
     } 
   fi
+  info "Found $RESOURCE has label ${LABEL[@]}"
 
   if (( ${#LABEL[@]} )); then
       POD_ARGS+=( "-l ${LABEL[0]}" )
